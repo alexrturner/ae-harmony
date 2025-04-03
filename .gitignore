@@ -1,0 +1,27 @@
+# Dependencies
+node_modules
+
+# Build
+/build
+/.svelte-kit
+/package
+
+# Environment
+.env
+.env.*
+!.env.example
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# PocketBase data
+pocketbase/pb_data/
+pb-sharing/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local
+local
+.vscode
+static/fonts/
