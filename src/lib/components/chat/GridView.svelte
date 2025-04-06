@@ -62,7 +62,7 @@
   .view--grid {
     grid-template-columns: 1fr;
     gap: 0;
-    height: 100vh;
+    height: 100dvh;
     padding: 0;
   }
   .view--grid .pixel {

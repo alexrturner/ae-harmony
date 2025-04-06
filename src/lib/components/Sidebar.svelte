@@ -377,7 +377,8 @@ function createFlowerCanvas() {
   }
 
   .sidebar-content {
-    height: calc(100vh - 2rem);
+    height: calc(100vh - 2rem); /* fallback */
+    height: calc(100dvh - 2rem);
     display: flex;
     flex-direction: column;
     padding: 1rem 0.5rem;

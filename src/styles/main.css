@@ -19,7 +19,7 @@
 
   --cc-border: #e5e7eb;
 
-  --height-constellation: 80vh;
+  --height-constellation: 80dvh;
 
   --sidebar-width: 4rem;
   --pixel-size: 2.5rem;
@@ -71,7 +71,7 @@ body.sidebar-open {
 }
 
 .layout-container {
-  min-height: 100vh;
+  min-height: 100dvh;
   height: 100%;
   display: flex;
   flex-direction: column;

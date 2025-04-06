@@ -147,7 +147,7 @@
     right: 0;
     left: var(--sidebar-width);
     bottom: 0;
-    height: 100vh;
+    height: 100dvh;
     width: calc(100vw - var(--sidebar-width));
     padding: 0;
     pointer-events: auto;
