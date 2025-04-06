@@ -1,10 +1,11 @@
 <script lang="ts">
+    import RecordRTC from 'recordrtc'
     import { createEventDispatcher, onDestroy } from 'svelte'
     
     const dispatch = createEventDispatcher();
     
-    let mediaRecorder: MediaRecorder | null = null;
-    let audioChunks: Blob[] = [];
+    let recorder: any = null;
+    let audioStream: MediaStream | null = null;
     let isRecording = false;
     let audioURL: string | null = null;
     let audioBlob: Blob | null = null;
@@ -14,40 +15,57 @@
     let recordingTimer: NodeJS.Timeout | null = null;
     let recordingTime = 0;
 
+    const getUserMedia = async (constraints: MediaStreamConstraints) => {
+        if (window.navigator.mediaDevices) {
+            return window.navigator.mediaDevices.getUserMedia(constraints);
+        }
+        let legacyApi =
+            navigator.getUserMedia || 
+            navigator.webkitGetUserMedia || 
+            navigator.mozGetUserMedia || 
+            navigator.msGetUserMedia;
+        if (legacyApi) {
+            return new Promise(function (resolve, reject) {
+                legacyApi.bind(window.navigator)(constraints, resolve, reject);
+            });
+        } else {
+            throw new Error("User media API not supported");
+        }
+    };
+
+    const browserIsSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
 
     async function startRecording() {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // get supported MIME types
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-                ? 'audio/webm'
-                : MediaRecorder.isTypeSupported('audio/mp4')
-                    ? 'audio/mp4'
-                    : 'audio/ogg';
-            
-            mediaRecorder = new MediaRecorder(stream, { mimeType });
-            
-            mediaRecorder.ondataavailable = (event) => {
-                audioChunks.push(event.data);
-            };
-
-            mediaRecorder.onstop = () => {
-                // snap MIME type Blob
-                audioBlob = new Blob(audioChunks, { type: mimeType });
-                audioURL = URL.createObjectURL(audioBlob);
-            };
-
-
-            audioChunks = [];
-            mediaRecorder.start();
             isRecording = true;
-            error = null;
+            const stream = await getUserMedia({ audio: true, video: false });
+            audioStream = stream;
 
+            const options = {
+                disableLogs: true,
+                type: "audio",
+                mimeType: 'audio/wav',
+                bufferSize: 16384,
+                sampleRate: 44100,
+                numberOfAudioChannels: 2,
+            };
+
+            if (browserIsSafari || isIOS) {
+                // Better for iOS/Safari
+                options.recorderType = RecordRTC.StereoAudioRecorder;
+            }
+
+            recorder = RecordRTC(stream, options);
+            recorder.startRecording();
+            
+            error = null;
             recordingTime = 0;
             startRecordingTimer();
         } catch (err) {
             console.error('Error accessing microphone:', err);
             error = 'Could not access microphone. Please ensure you have granted permission.';
+            isRecording = false;
         }
     }
 
@@ -69,22 +87,36 @@
     }
 
     function stopRecording() {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stop();
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            isRecording = false;
+        if (recorder && isRecording) {
             clearRecordingTimer();
+            
+            recorder.stopRecording(() => {
+                audioBlob = recorder.getBlob();
+                audioURL = URL.createObjectURL(audioBlob);
+                
+                // Clean up
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                }
+                isRecording = false;
+            });
         }
     }
 
     function cancelRecording() {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
-            isRecording = false;
-            audioChunks = [];
-            audioURL = null;
-            audioBlob = null;
+        if (recorder && isRecording) {
             clearRecordingTimer();
+            
+            recorder.stopRecording(() => {
+                if (audioStream) {
+                    audioStream.getTracks().forEach(track => track.stop());
+                }
+                
+                recorder.destroy();
+                isRecording = false;
+                audioURL = null;
+                audioBlob = null;
+            });
         }
     }
 
@@ -94,7 +126,11 @@
         }
         audioURL = null;
         audioBlob = null;
-        audioChunks = [];
+        
+        if (recorder) {
+            recorder.destroy();
+            recorder = null;
+        }
     }
 
     function handleFileUpload(event: Event) {
@@ -120,14 +156,19 @@
     }
 
     onDestroy(() => {
-        if (mediaRecorder && isRecording) {
-            mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        if (recorder) {
+            recorder.destroy();
         }
+        
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+        }
+        
         if (audioURL) {
             URL.revokeObjectURL(audioURL);
         }
+        
         clearRecordingTimer();
-
     });
 </script>
 
