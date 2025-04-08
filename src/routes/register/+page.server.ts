@@ -1,3 +1,5 @@
+import { fail } from "@sveltejs/kit";
+
 function getRandomColor() {
     const colors = [
       '#008080', // Teal
@@ -32,6 +34,10 @@ export const actions: Actions = {
       
     } catch (err) {
       // oop
+      console.error('Registration error:', err);
+    return fail(500, { 
+      error: 'Registration failed. Please try again.' 
+    });
     }
   }
 }; 

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { browser } from '$app/environment'
     import { page } from '$app/stores'
     import AudioRecorder from '$lib/components/AudioRecorder.svelte'
     import { pb } from '$lib/pocketbase'
@@ -13,6 +14,7 @@
     let chat: any = null;
     let loading = true;
     let scrollContainer: HTMLElement;
+    let isUnmounted = false;
 
     
     const globalVolume = writable(1.0);
@@ -22,7 +24,7 @@
     let userSoundPlayers = new Map<string, Howl>();
 
     $: {
-        if ($page.params.id) {
+        if ($page.params.id && browser) {
             loadChat();
             // clear audio players when changing chat
             audioPlayers.forEach(sound => sound.stop());
@@ -42,17 +44,22 @@
     });
 
     onDestroy(() => {
+        isUnmounted = true;
         userSoundPlayers.forEach(sound => sound.stop());
         userSoundPlayers.clear();
     });
 
     async function loadChat() {
+        if (isUnmounted || !browser) return;
+        
         loading = true;
         try {
             chat = await pb.collection('chats').getOne($page.params.id, {
                 expand: 'participants',
                 fields: 'id,totalSize,lastMessageDate,expand.participants'
             });
+            
+            if (isUnmounted) return;
             
             otherUser = chat.expand.participants.find(
                 (p: any) => p.id !== $currentUser?.id
@@ -64,27 +71,34 @@
                 expand: 'sender'
             });
             
+            if (isUnmounted) return;
+            
             messages = messageRecords.items;
 
             // update chat size
             await updateChatSize();
 
-
             // reset scroll position for new chat
             setTimeout(() => {
-                if (scrollContainer) {
+                if (scrollContainer && !isUnmounted) {
                     scrollContainer.scrollLeft = isParticipant ? 
                         scrollContainer.scrollWidth : 0;
                 }
             }, 100);
         } catch (err) {
-            console.error('Error loading chat:', err);
+            if (!isUnmounted) {
+                console.error('Error loading chat:', err);
+            }
         } finally {
-            loading = false;
+            if (!isUnmounted) {
+                loading = false;
+            }
         }
     }
 
     async function updateChatSize() {
+        if (isUnmounted || !browser) return;
+        
         try {
             // total size from all messages
             let totalSize = 0;
@@ -103,11 +117,15 @@
                     lastMessageDate: messages.length > 0 ? messages[messages.length - 1].created : null
                 });
                 
+                if (isUnmounted) return;
+                
                 // local chat object
                 chat.totalSize = totalSize;
             }
         } catch (err) {
-            console.error('uhoh chat size:', err);
+            if (!isUnmounted) {
+                console.error('uhoh chat size:', err);
+            }
         }
     }
 
@@ -281,21 +299,29 @@
     let unsubscribe: (() => void) | undefined;
     
     onMount(async () => {
-        loadChat();
+        isUnmounted = false;
         
-        
-        unsubscribe = await pb.collection('messages').subscribe('*', async ({ action, record }) => {
-            if (action === 'create' && record.chat === chatId) {
-                const messageWithSender = await pb.collection('messages').getOne(record.id, { expand: 'sender' });
-                messages = [...messages, messageWithSender];
-
+        if (browser) {
+            loadChat();
+            
+            unsubscribe = await pb.collection('messages').subscribe('*', async ({ action, record }) => {
+                if (isUnmounted) return;
                 
-                await updateChatSize();
-            }
-        });
+                if (action === 'create' && record.chat === chatId) {
+                    const messageWithSender = await pb.collection('messages').getOne(record.id, { expand: 'sender' });
+                    
+                    if (isUnmounted) return;
+                    
+                    messages = [...messages, messageWithSender];
+                    
+                    await updateChatSize();
+                }
+            });
+        }
     });
 
     onDestroy(() => {
+        isUnmounted = true;
         if (typeof unsubscribe === 'function') {
             unsubscribe();
         }

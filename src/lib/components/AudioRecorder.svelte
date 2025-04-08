@@ -1,6 +1,6 @@
 <script lang="ts">
-    import RecordRTC from 'recordrtc'
-    import { createEventDispatcher, onDestroy } from 'svelte'
+    import { browser } from '$app/environment'
+    import { createEventDispatcher, onDestroy, onMount } from 'svelte'
     
     const dispatch = createEventDispatcher();
     
@@ -10,20 +10,42 @@
     let audioURL: string | null = null;
     let audioBlob: Blob | null = null;
     let error: string | null = null;
+    let RecordRTC: any = null;
 
     const MAX_RECORDING_TIME = 60; // sec
     let recordingTimer: NodeJS.Timeout | null = null;
     let recordingTime = 0;
 
+    // Browser detection - move inside onMount to ensure it only runs in browser
+    let browserIsSafari = false;
+    let isIOS = false;
+
+    onMount(async () => {
+        if (browser) {
+            // import RecordRTC only in browser context
+            const recordRTCModule = await import('recordrtc');
+            RecordRTC = recordRTCModule.default;
+            
+            browserIsSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+            isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        }
+    });
+
     const getUserMedia = async (constraints: MediaStreamConstraints) => {
+        if (!browser) return null;
+        
         if (window.navigator.mediaDevices) {
             return window.navigator.mediaDevices.getUserMedia(constraints);
         }
+        
+        // type assertion for legacy API access
+        const nav = navigator as any;
         let legacyApi =
-            navigator.getUserMedia || 
-            navigator.webkitGetUserMedia || 
-            navigator.mozGetUserMedia || 
-            navigator.msGetUserMedia;
+            nav.getUserMedia || 
+            nav.webkitGetUserMedia || 
+            nav.mozGetUserMedia || 
+            nav.msGetUserMedia;
+            
         if (legacyApi) {
             return new Promise(function (resolve, reject) {
                 legacyApi.bind(window.navigator)(constraints, resolve, reject);
@@ -33,13 +55,15 @@
         }
     };
 
-    const browserIsSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-
     async function startRecording() {
+        if (!browser || !RecordRTC) {
+            error = 'Recording is not available in this environment';
+            return;
+        }
+        
         try {
             isRecording = true;
-            const stream = await getUserMedia({ audio: true, video: false });
+            const stream = await getUserMedia({ audio: true, video: false }) as MediaStream;
             audioStream = stream;
 
             const options = {
@@ -53,10 +77,10 @@
 
             if (browserIsSafari || isIOS) {
                 // Better for iOS/Safari
-                options.recorderType = RecordRTC.StereoAudioRecorder;
+                (options as any).recorderType = RecordRTC.StereoAudioRecorder;
             }
 
-            recorder = RecordRTC(stream, options);
+            recorder = new RecordRTC(stream, options);
             recorder.startRecording();
             
             error = null;
@@ -87,40 +111,44 @@
     }
 
     function stopRecording() {
-        if (recorder && isRecording) {
-            clearRecordingTimer();
-            
-            recorder.stopRecording(() => {
-                audioBlob = recorder.getBlob();
+        if (!browser || !recorder || !isRecording) return;
+        
+        clearRecordingTimer();
+        
+        recorder.stopRecording(() => {
+            audioBlob = recorder.getBlob();
+            if (audioBlob) {
                 audioURL = URL.createObjectURL(audioBlob);
-                
-                // Clean up
-                if (audioStream) {
-                    audioStream.getTracks().forEach(track => track.stop());
-                }
-                isRecording = false;
-            });
-        }
+            }
+            
+            // Clean up
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
+            isRecording = false;
+        });
     }
 
     function cancelRecording() {
-        if (recorder && isRecording) {
-            clearRecordingTimer();
+        if (!browser || !recorder || !isRecording) return;
+        
+        clearRecordingTimer();
+        
+        recorder.stopRecording(() => {
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+            }
             
-            recorder.stopRecording(() => {
-                if (audioStream) {
-                    audioStream.getTracks().forEach(track => track.stop());
-                }
-                
-                recorder.destroy();
-                isRecording = false;
-                audioURL = null;
-                audioBlob = null;
-            });
-        }
+            recorder.destroy();
+            isRecording = false;
+            audioURL = null;
+            audioBlob = null;
+        });
     }
 
     function clearRecording() {
+        if (!browser) return;
+        
         if (audioURL) {
             URL.revokeObjectURL(audioURL);
         }
@@ -156,6 +184,10 @@
     }
 
     onDestroy(() => {
+        if (!browser) return;
+        
+        clearRecordingTimer();
+        
         if (recorder) {
             recorder.destroy();
         }
@@ -167,8 +199,6 @@
         if (audioURL) {
             URL.revokeObjectURL(audioURL);
         }
-        
-        clearRecordingTimer();
     });
 </script>
 

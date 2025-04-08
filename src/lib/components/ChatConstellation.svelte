@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment'
   import { goto } from '$app/navigation'
   import { pb } from '$lib/pocketbase'
   import { currentUser } from '$lib/stores/user'
@@ -16,6 +17,8 @@
   let chats: Chat[] = initialChats
   let loading = false
   let isUnmounted = false
+  let unsubscribe = () => {}
+
 
   // user store changes
   $: user = $currentUser
@@ -91,15 +94,18 @@
   onMount(async () => {
     isUnmounted = false
     
-    const unsubscribe = await pb.collection('chats').subscribe('*', () => {
-      refreshChats()
-    })
+    // only subscribe to PocketBase in browser environment
+    if (browser) {
+      unsubscribe = await pb.collection('chats').subscribe('*', () => {
+        refreshChats()
+      })
+    }
+  })
 
-    onDestroy(() => {
+  onDestroy(() => {
       isUnmounted = true
       unsubscribe()
     })
-  })
 </script>
 
 <!-- <div class="view-controls">

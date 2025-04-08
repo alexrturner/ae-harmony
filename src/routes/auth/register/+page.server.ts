@@ -45,7 +45,10 @@ export const actions = {
 			await locals.pb.collection('users').requestVerification(formData.email);
 		} catch (err) {
 			console.log('Error: ', err);
-			throw error(500, 'Something went wrong');
+			return fail(500, {
+				data: formData,
+				error: 'Registration failed. Sorry, please try again.'
+			});
 		}
 
 		throw redirect(303, '/auth/login');

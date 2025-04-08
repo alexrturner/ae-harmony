@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment'
   import Sidebar from '$lib/components/Sidebar.svelte'
   import { currentUser } from '$lib/stores/user'
   import '../styles/main.css'
@@ -7,6 +8,9 @@
   import { onNavigate } from '$app/navigation'
 
   onNavigate((navigation) => {
+    // only run in browser env
+    if (!browser) return;
+    
     // @ts-ignore <-- This is a private API so we need to ignore the TS error
     if (!document.startViewTransition) return
 

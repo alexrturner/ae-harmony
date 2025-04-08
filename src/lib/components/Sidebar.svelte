@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { browser } from '$app/environment'
   import { goto } from '$app/navigation'
   import type { App } from '$lib/app'
   import { pb } from '$lib/pocketbase'
@@ -14,10 +15,13 @@
   let newUsers: App.User[] = []
   let loading = true
   let audioPlayers = new Map<string, Howl>()
+  let isUnmounted = false
 
   $: currentUser.set(data.user)
 
   async function fetchUsers() {
+    if (isUnmounted || !browser) return;
+
     try {
       loading = true;
       
@@ -27,12 +31,17 @@
         sort: 'created'
       })
 
+      if (isUnmounted) return;
+
+
       // all of your chats
       const chats = await pb.collection('chats').getList(1, 100, {
         filter: `participants ?~ "${$currentUser?.id}"`,
         sort: '-updated',
         expand: 'participants'
       });
+
+      if (isUnmounted) return;
 
       // users you've chatted with
       const chatUserIds = new Set();
@@ -56,20 +65,27 @@
       newUsers = records.items.filter(user => !chatUserIds.has(user.id));
 
     } catch (err) {
-      console.error('Error fetching users:', err);
-      recentChats = [];
-      newUsers = [];
+      if (!isUnmounted) {
+        console.error('Error fetching users:', err);
+
+        recentChats = [];
+        newUsers = [];
+      }
     } finally {
-      loading = false;
+      if (!isUnmounted) {
+        loading = false;
+      }
     }
   }
 
   // again when you change name
-  $: if ($currentUser) {
+  $: if ($currentUser && browser && !isUnmounted) {
     fetchUsers()
   }
 
   async function startChat(otherUserId: string) {
+    if (isUnmounted || !browser) return;
+
     try {
         // verify current user
         if (!$currentUser?.id) {
@@ -97,19 +113,23 @@
             return;
         }
 
-
         navigateToChat(otherUserId);
     } catch (err) {
+      if (!isUnmounted) {
         console.error('error handling user interaction:', err);
+      }
     }
   }
 
   async function navigateToChat(otherUserId: string) {
+    if (isUnmounted || !browser) return;
     try {
         // check if chat exists
         const existingChat = await pb.collection('chats').getList(1, 1, {
             filter: `participants ?~ "${$currentUser?.id}" && participants ?~ "${otherUserId}"`
         });
+
+        if (isUnmounted) return;
 
         // existing chat
         if (existingChat.items.length > 0) {
@@ -122,13 +142,19 @@
             participants: [$currentUser?.id, otherUserId]
         });
 
+        if (isUnmounted) return;
+
         goto(`/chat/${newChat.id}`);
     } catch (err) {
+      if (!isUnmounted) {
         console.error('Error navigating to chat:', err);
+      }
     }
   }
 
   function handleLogout() {
+    if (isUnmounted || !browser) return;
+
     pb.authStore.clear()
     goto('/')
   }
@@ -227,13 +253,17 @@ function createFlowerCanvas() {
   let homeCanvas;
   
   onMount(() => {
-    if (homeCanvas) {
+    isUnmounted = false;
+
+    if (browser && homeCanvas) {
       const ctx = homeCanvas.getContext('2d');
       giveFlower(ctx);
     }
   });
 
   function regiveFlower() {
+    if (isUnmounted || !browser) return;
+
     if (homeCanvas) {
       const ctx = homeCanvas.getContext('2d');
       giveFlower(ctx);
@@ -241,6 +271,7 @@ function createFlowerCanvas() {
   }
 
   onDestroy(() => {
+    isUnmounted = true;
     audioPlayers.forEach(sound => sound.stop());
     audioPlayers.clear();
   })
